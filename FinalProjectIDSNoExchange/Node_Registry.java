@@ -12,7 +12,9 @@ import java.util.LinkedList;
 public class Node_Registry {
 
     private static LinkedList<String> nodes = new LinkedList<>();
-    private static final String EXCHANGE_NAME = "node_logs";
+    //private static final String EXCHANGE_NAME = "node_logs";-------------------------------
+    private static final String REGISTRY_QUEUE = "registry"; //-------------------------
+    private static final String OVERLAY_QUEUE = "overlay"; //-------------------------
     private static int count,num_nodes;
     private static int[][] topology;
     private static int[][] topology_virtual;
@@ -25,6 +27,7 @@ public class Node_Registry {
         Channel send = connection.createChannel();
         Channel recv = connection.createChannel();
 
+        /* ----------------------DELETED--------------------------
         send.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
         recv.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
         String queueName = recv.queueDeclare().getQueue();
@@ -34,6 +37,9 @@ public class Node_Registry {
         recv.queueBind(queueName, EXCHANGE_NAME, "obtain_list_nodes");
         recv.queueBind(queueName, EXCHANGE_NAME, "obtain_connections");
         recv.queueBind(queueName, EXCHANGE_NAME, "send_message");
+        */
+        send.queueDeclare(OVERLAY_QUEUE); //--------------------------
+        recv.queueDeclare(REGISTRY_QUEUE); //--------------------------------------
 
         System.out.println("Node Registry running...");
 
@@ -46,7 +52,8 @@ public class Node_Registry {
         count = 1;
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
             String message = new String(delivery.getBody(), "UTF-8");
-            String key = delivery.getEnvelope().getRoutingKey();
+            // String key = delivery.getEnvelope().getRoutingKey(); ------------------------------------
+            String key = delivery.getProperties().getAppId(); //-------------------------------------
             String replyTo = delivery.getProperties().getReplyTo();
 
             // Set up the properties with the same correlation id
@@ -58,6 +65,7 @@ public class Node_Registry {
                 String id = "node" + count;
                 count += 1;
                 nodes.add(id);
+                send.queueDeclare(id);//--//--//--//--//--//--//--//--//--
                 System.out.println("New node registered with id: " + id);
                 
                 //Send the id to the new node
@@ -70,12 +78,14 @@ public class Node_Registry {
                 System.out.println("Node removed with id: " + message);
 
             // Send the list of nodes
-            } else if( key.equals("obtain_list_nodes")){
+            } else if( key.equals("obtain_list_nodes")) {
+                AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().appId("list").build();
                 String list = obtainListNodes();
-                send.basicPublish(EXCHANGE_NAME, "list", null, list.getBytes("UTF-8"));
+                send.basicPublish("",OVERLAY_QUEUE, null, list.getBytes("UTF-8"));
 
             // Get the connections of the node requesting them and send them to that node
             } else if( key.equals("obtain_connections")){
+                /* $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ IS GETTING CHANGED BY YOU $$$$$$$$$$$$$$$$$$$$$$$$$$$$
                 char index = message.charAt(4);
                 String connections = "",aux;
 
@@ -85,20 +95,22 @@ public class Node_Registry {
                 }
             
                 send.basicPublish("", replyTo, replyProps, connections.toString().getBytes("UTF-8"));
+                */
+
+                // My guess of what it'll look like:
+                char id = message.charAt(4);
+                String connections = obtainConnections(Character.getNumericValue(id));
+                send.basicPublish("",message, null, connections.getBytes("UTF-8"));
 
                // Initiate the sending of a message ///////////////////////////////////////////////////////////////////
             } else if( key.equals("send_message")){ 
                 // Decode sender and receiver nodes provided by the overlay
-                String srcNode = delivery.getProperties().getAppId();
+                String srcNode = delivery.getProperties().getClusterId();
                 String destNode = delivery.getProperties().getUserId(); 
 
-                // Decrement to repesent the actual node numbers
-                Integer temp = Integer.parseInt(srcNode.trim());
-                temp--;
-                srcNode = temp.toString();
-                temp = Integer.parseInt(destNode.trim());
-                temp--;
-                destNode = temp.toString();
+                // Decrement to repesent the actual node numbers and format to match id style
+                srcNode = decrementFormat(srcNode);
+                destNode = decrementFormat(destNode);
                 
                 // Encapsulate destination node in message
                 AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
@@ -113,8 +125,9 @@ public class Node_Registry {
             }
         };
 
-        recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {
-        });
+        //recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {}); -----------------
+        recv.basicConsume(REGISTRY_QUEUE, true, deliverCallback, consumerTag -> {}); //---------------------------
+
         // Wait and be prepared to consume the message from RPC client.
         while (true) {
             synchronized (monitor) {
@@ -135,7 +148,7 @@ public class Node_Registry {
         return result;
     }
 
-    // Shouldn't this be a private function? //////////////////////////////////////////////////////////////////
+    // Shouldn't this be a private function? Also, is an Integer ArrayList really the best option since you're returning a String? //////////////////////////////////////////////////////////////////
     public static String obtainConnections(int node){
         ArrayList<Integer> connections = new ArrayList<Integer>();
         for(int j = 0; j < num_nodes; j++){
@@ -151,5 +164,12 @@ public class Node_Registry {
             }
         }
         return "Some String"; ////////////////////////////////////////////////////////////
+    }
+
+    private static String decrementFormat(String nodeId) {
+        char id = nodeId.charAt(4);
+        Integer temp = Integer.parseInt(String.valueOf(id).trim());
+        temp--;
+        return "node" + temp.toString();
     }
 }

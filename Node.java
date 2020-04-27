@@ -25,7 +25,7 @@ public class Node {
         Channel recv = connection.createChannel();
 
         String queueName = recv.queueDeclare().getQueue();
-        send.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
+        send.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);        
 
         id = "0";
         //The Runtime.getRuntime()... section catches Ctrl+C and tells the Node_Registry the node is deleted/disconnected
@@ -53,11 +53,13 @@ public class Node {
 
         send.basicPublish(EXCHANGE_NAME, "new_node", props, null);
 
-        // Receive the id of the node in the Node_Registry Linked List
+        
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
             String message = new String(delivery.getBody(), "UTF-8");
+            String destNode = delivery.getProperties().getUserId();  ////////////////////////////////////////////////////
             // String key = delivery.getEnvelope().getRoutingKey();
 
+            // Receive the id of the node in the Node_Registry Linked List
             if (delivery.getProperties().getCorrelationId().equals(corrId)) {
                 id = message;
                 System.out.println("Node registered with id: " + id);
@@ -71,10 +73,31 @@ public class Node {
                         .build();
 
                 send.basicPublish(EXCHANGE_NAME, "obtain_connections", props2, id.getBytes());
+
+            // Receive connections with other nodes
             } else if (delivery.getProperties().getCorrelationId().equals(corrId2)){
                 //Cast to an array the message
                 connections = ;
+
+                
+            // Receive normal message ////////////////////////////////////////////////////////
+            } else {
+                if (destNode.equals(id)) {
+                    System.out.println(message);
+
+                } else {
+                    // Encapsulate destination node in message
+                    AMQP.BasicProperties props3 = new AMQP.BasicProperties.Builder().userId(destNode).build();
+
+                    // Lookup which node must send to in order to reach destNode and send
+                    Integer link = connections[endDest-1];
+                    String nextNode = link.toString();
+
+                    // Send message to next node
+                    send.basicPublish(EXCHANGE_NAME, nextDest, props3, message.getBytes());
+                }
             }
+            //////////////////////////////////////////////////
         };
 
         recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {
