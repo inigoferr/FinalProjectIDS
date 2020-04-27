@@ -77,8 +77,13 @@ public class Node {
             // Receive connections with other nodes
             } else if (delivery.getProperties().getCorrelationId().equals(corrId2)){
                 //Cast to an array the message
-                connections = ;
+                //connections = ;
+                byte[] table_route = delivery.getBody();
 
+                //Translate byte[] to int[]
+                for(int i = 0; i < table_route.length; i++){
+                    connections[i] = (int) table_route[i];
+                }
                 
             // Receive normal message ////////////////////////////////////////////////////////
             } else {
