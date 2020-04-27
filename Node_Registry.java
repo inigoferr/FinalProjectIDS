@@ -33,6 +33,7 @@ public class Node_Registry {
         recv.queueBind(queueName, EXCHANGE_NAME, "delete_node");
         recv.queueBind(queueName, EXCHANGE_NAME, "obtain_list_nodes");
         recv.queueBind(queueName, EXCHANGE_NAME, "obtain_connections");
+        recv.queueBind(queueName, EXCHANGE_NAME, "send_message");
 
         System.out.println("Node Registry running...");
 
@@ -46,12 +47,13 @@ public class Node_Registry {
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
             String message = new String(delivery.getBody(), "UTF-8");
             String key = delivery.getEnvelope().getRoutingKey();
+            String replyTo = delivery.getProperties().getReplyTo();
 
-            AMQP.BasicProperties replyProps = new AMQP.BasicProperties
-            .Builder()
-            .correlationId(delivery.getProperties().getCorrelationId())
-            .build();
+            // Set up the properties with the same correlation id
+            AMQP.BasicProperties replyProps = new AMQP.BasicProperties.Builder()
+            .correlationId(delivery.getProperties().getCorrelationId()).build();
 
+            // Add node
             if (key.equals("new_node")) {
                 String id = "node" + count;
                 count += 1;
@@ -59,18 +61,21 @@ public class Node_Registry {
                 System.out.println("New node registered with id: " + id);
                 
                 //Send the id to the new node
-                send.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, id.getBytes("UTF-8"));
+                send.basicPublish("", replyTo, replyProps, id.getBytes("UTF-8"));
                 //send.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+
+            // Delete node
             } else if (key.equals("delete_node")) {
                 nodes.remove(message); // The node would have sent the ID in the 'message'
                 System.out.println("Node removed with id: " + message);
-            } else if( key.equals("obtain_list_nodes")){
-                //Send the list of nodes
-                String list = obtainListNodes();
 
+            // Send the list of nodes
+            } else if( key.equals("obtain_list_nodes")){
+                String list = obtainListNodes();
                 send.basicPublish(EXCHANGE_NAME, "list", null, list.getBytes("UTF-8"));
+
+            // Get the connections of the node requesting them and send them to that node
             } else if( key.equals("obtain_connections")){
-                //Send the connections of the node requesting them
                 char index = message.charAt(4);
                 String connections = "",aux;
 
@@ -79,8 +84,29 @@ public class Node_Registry {
                     connections = connections.concat() + "/";
                 }
             
-                send.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, connections.toString().getBytes("UTF-8"));
+                send.basicPublish("", replyTo, replyProps, connections.toString().getBytes("UTF-8"));
+
+               // Initiate the sending of a message ///////////////////////////////////////////////////////////////////
+            } else if( key.equals("send_message")){ 
+                // Decode sender and receiver nodes provided by the overlay
+                String srcNode = delivery.getProperties().getAppId();
+                String destNode = delivery.getProperties().getUserId(); 
+
+                // Decrement to repesent the actual node numbers
+                Integer temp = Integer.parseInt(srcNode.trim());
+                temp--;
+                srcNode = temp.toString();
+                temp = Integer.parseInt(destNode.trim());
+                temp--;
+                destNode = temp.toString();
+                
+                // Encapsulate destination node in message
+                AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                
+                // Send message to source node
+                send.basicPublish("", srcNode, sendProps, message.getBytes());
             }
+            ///////////////////////////////////////////////////////////////
 
             synchronized (monitor) {
                 monitor.notify();
@@ -109,6 +135,7 @@ public class Node_Registry {
         return result;
     }
 
+    // Shouldn't this be a private function? //////////////////////////////////////////////////////////////////
     public static String obtainConnections(int node){
         ArrayList<Integer> connections = new ArrayList<Integer>();
         for(int j = 0; j < num_nodes; j++){
@@ -123,6 +150,6 @@ public class Node_Registry {
                 }
             }
         }
+        return "Some String"; ////////////////////////////////////////////////////////////
     }
-
 }

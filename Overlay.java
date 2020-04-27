@@ -13,7 +13,7 @@ public class Overlay {
     private static final String EXCHANGE_NAME = "node_logs";
 
     public static void main(String[] argv) throws Exception {
-        String corrId;
+        String corrId, nodeX, nodeY, userMessage;
 
         try (Scanner scan = new Scanner(System.in)) {
             ConnectionFactory factory = new ConnectionFactory();
@@ -67,9 +67,14 @@ public class Overlay {
                     case "list":
                         send.basicPublish(EXCHANGE_NAME, "obtain_list_nodes", null, null);
                         break;
-                    case "connect":
+                    case "connect": 
+                        nodeX = scan.next();
+                        nodeY = scan.next();
+                        send.basicPublish(EXCHANGE_NAME, "obtain_list_nodes", null, null);
                         break;
                     case "disconnect":
+                        nodeX = scan.next();
+                        nodeY = scan.next();
                         break;
                     case "show_topology":
                         break;
@@ -78,8 +83,14 @@ public class Overlay {
                     case "send":
                         break;
                     case "send_left":
+                        nodeX = scan.next();
+                        scan.skip(" ");
+                        userMessage = scan.nextLine();
                         break;
                     case "send_right":
+                        nodeX = scan.next();
+                        scan.skip(" ");
+                        userMessage = scan.nextLine();
                         break;
                     case "help":
                         showMenu();
@@ -107,7 +118,7 @@ public class Overlay {
         System.out.println("show_topology_overlay : Show topology of the overlaying (Logic Layer = Virtual Ring)");
         System.out.println("send [nodeX] [nodeY] [message] : Send a message from Node X to Node Y");
         System.out.println("send_left [nodeX] [message]: Send Left from Node X");
-        System.out.println("send_right [nodeX]: Send Right from Node X");
+        System.out.println("send_right [nodeX] [message]: Send Right from Node X");
         System.out.println("help : To see the commands available");
         System.out.println("exit : To exit the programm");
     }
