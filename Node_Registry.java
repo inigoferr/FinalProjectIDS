@@ -17,7 +17,8 @@ import java.util.List;
 public class Node_Registry {
 
     private static LinkedList<String> nodes = new LinkedList<>();
-    private static final String EXCHANGE_NAME = "node_logs";
+    private static final String REGISTRY_QUEUE = "registry";
+    private static final String OVERLAY_QUEUE = "overlay";
     private static int count, num_nodes;
     private static int[][] topology;
     private static int[][] topology_virtual;
@@ -33,15 +34,9 @@ public class Node_Registry {
         Channel send = connection.createChannel();
         Channel recv = connection.createChannel();
 
-        send.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
-        recv.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
-        String queueName = recv.queueDeclare().getQueue();
-
-        recv.queueBind(queueName, EXCHANGE_NAME, "new_node");
-        recv.queueBind(queueName, EXCHANGE_NAME, "delete_node");
-        recv.queueBind(queueName, EXCHANGE_NAME, "obtain_list_nodes");
-        recv.queueBind(queueName, EXCHANGE_NAME, "obtain_connections");
-        recv.queueBind(queueName, EXCHANGE_NAME, "send_message");
+        boolean durable = true;
+        send.queueDeclare(OVERLAY_QUEUE, durable, false, false, null);
+        recv.queueDeclare(REGISTRY_QUEUE, durable, false, false, null);
 
         // Obtain Physical Topology
         PhysicalTopology physicalTopology = new PhysicalTopology();
@@ -50,30 +45,31 @@ public class Node_Registry {
 
         // Calculate the Parameters to implement in the future Dijkstra
         calculateParametersForDijkstra(topology);
-       
+
+        // Initialize Virtual Topology
+        initializeVirtualTopology();
+
         System.out.println("Node Registry running...");
 
         Object monitor = new Object();
         count = 1;
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
             String message = new String(delivery.getBody(), "UTF-8");
-            String key = delivery.getEnvelope().getRoutingKey();
+            String key = delivery.getProperties().getAppId();
             String replyTo = delivery.getProperties().getReplyTo();
-
-            // Set up the properties with the same correlation id
-            AMQP.BasicProperties replyProps = new AMQP.BasicProperties.Builder()
-                    .correlationId(delivery.getProperties().getCorrelationId()).build();
+            String corrID = delivery.getProperties().getCorrelationId();
 
             // Add node
             if (key.equals("new_node")) {
                 String id = "node" + count;
                 count += 1;
                 nodes.add(id);
+                send.queueDeclare(id, durable, false, false, null);
                 System.out.println("New node registered with id: " + id);
 
                 // Send the id to the new node
-                send.basicPublish("", replyTo, replyProps, id.getBytes("UTF-8"));
-                // send.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                AMQP.BasicProperties newProps = new AMQP.BasicProperties.Builder().correlationId(corrID).build();
+                send.basicPublish("", replyTo, newProps, id.getBytes("UTF-8"));
 
                 // Delete node
             } else if (key.equals("delete_node")) {
@@ -83,55 +79,77 @@ public class Node_Registry {
                 // Send the list of nodes
             } else if (key.equals("obtain_list_nodes")) {
                 String list = obtainListNodes();
-                send.basicPublish(EXCHANGE_NAME, "list", null, list.getBytes("UTF-8"));
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().appId("list").build();
+                send.basicPublish("", OVERLAY_QUEUE, listProps, list.getBytes("UTF-8"));
 
                 // Get the connections of the node requesting them and send them to that node
             } else if (key.equals("obtain_connections")) {
                 char index = message.charAt(4);
-
-                ArrayList<Integer> table_routes = obtainConnections(index);
+                ArrayList<Integer> table_routes = obtainConnections(Character.getNumericValue(index));
                 Object[] x = table_routes.toArray();
                 byte[] envelop = new byte[x.length];
 
                 System.out.print("Table Routes");
-                for (int i = 0; i < x.length; i++){
+                for (int i = 0; i < x.length; i++) {
                     envelop[i] = (byte) x[i];
                     System.out.print(envelop[i] + "|");
                 }
                 System.out.println("");
 
-                send.basicPublish("", replyTo, replyProps, envelop);
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().correlationId(corrID).build();
+                send.basicPublish("", replyTo, listProps, envelop);
+
+                // Connect two nodes in the virtual topology
+            } else if (key.equals("connect")) {
+                // Decode nodes provided by the overlay
+                String nodeX = delivery.getProperties().getUserId();
+                String nodeY = delivery.getProperties().getClusterId();
+
+                // connect the nodes in virtual topology
+                // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                connectNodesVirtualTopology(nodeX, nodeY);
+
+            } else if (key.equals("disconnect")) {
+                // Decode nodes provided by the overlay
+                String nodeX = delivery.getProperties().getUserId();
+                String nodeY = delivery.getProperties().getClusterId();
+
+                // connect the nodes in virtual topology
+                // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                disconnectNodesVirtualTopology(nodeX, nodeY);
 
                 // Initiate the sending of a message
-                // ///////////////////////////////////////////////////////////////////
-            } else if (key.equals("send_message")) {
+            } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
                 // Decode sender and receiver nodes provided by the overlay
-                String srcNode = delivery.getProperties().getAppId();
-                String destNode = delivery.getProperties().getUserId();
+                String srcNode = delivery.getProperties().getUserId();
+                String destNode = "";
 
-                // Decrement to repesent the actual node numbers
-                Integer temp = Integer.parseInt(srcNode.trim());
-                temp--;
-                srcNode = temp.toString();
-                temp = Integer.parseInt(destNode.trim());
-                temp--;
-                destNode = temp.toString();
+                if (key.equals("send")) {
+                    destNode = delivery.getProperties().getClusterId();
+                } else if (key.equals("send_left")) {
+                    destNode = obtainLeft(srcNode); // Get from virtual topology array
+                                                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                } else if (key.equals("send_right")) {
+                    destNode = obtainRight(srcNode); // Get from virtual topology array
+                                                     // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                }
 
-                // Encapsulate destination node in message
-                AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                if (destNode.equals("error")) { //The node is not connected
 
-                // Send message to source node
-                send.basicPublish("", srcNode, sendProps, message.getBytes());
+                } else {
+                    // Encapsulate destination node in message and send message to source node
+                    AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                    send.basicPublish("", srcNode, sendProps, message.getBytes());
+                }
             }
-            ///////////////////////////////////////////////////////////////
 
             synchronized (monitor) {
                 monitor.notify();
             }
         };
-
-        recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {
+        recv.basicConsume(REGISTRY_QUEUE, true, deliverCallback, consumerTag -> {
         });
+
         // Wait and be prepared to consume the message from RPC client.
         while (true) {
             synchronized (monitor) {
@@ -152,7 +170,6 @@ public class Node_Registry {
         return result;
     }
 
-    ///////////////////////////////////////////////////////////////////
     private static ArrayList<Integer> obtainConnections(int node) {
         ArrayList<Integer> connections = new ArrayList<Integer>();
 
@@ -161,18 +178,17 @@ public class Node_Registry {
         System.out.print("Table Route of Node " + node);
         for (int j = 0; j < num_nodes; j++) {
 
-            if ( node == j){
-                connections.set(j,-1); //It's the node
+            if (node == j) {
+                connections.set(j, -1); // It's the node
             } else {
                 List<NodePath> shortest_path = nodes_dijkstra.get(j).getShortestPath();
 
-                connections.set(j,Integer.parseInt(shortest_path.get(0).getName())-1);
+                connections.set(j, Integer.parseInt(shortest_path.get(0).getName()) - 1);
             }
             System.out.print(connections.get(j) + "|");
         }
         System.out.println("");
         return connections;
-        ////////////////////////////////////////////////////////////
     }
 
     private static void calculateParametersForDijkstra(int[][] matrix) {
@@ -194,6 +210,145 @@ public class Node_Registry {
                 }
             }
             graph.addNode(node);
+        }
+    }
+
+    private static void initializeVirtualTopology() {
+        topology_virtual = new int[num_nodes][num_nodes];
+        for (int i = 0; i < num_nodes; i++) {
+            for (int j = 0; j < num_nodes; j++) {
+                topology_virtual[i][j] = 0;
+            }
+        }
+    }
+
+    private static boolean connectNodesVirtualTopology(String nodeX, String nodeY) {
+        boolean result = true;
+        int x = Integer.parseInt(nodeX.substring(4));
+        int y = Integer.parseInt(nodeY.substring(4));
+
+        // Check if those nodes are connected to other nodes
+        boolean leftX = false, rightX = false, leftY = false, rightY = false;
+
+        for (int j = 0; j < num_nodes; j++) {
+            if (topology_virtual[x - 1][j] == -1) { // nodeX has a node connected in its left
+                leftX = true;
+            } else if (topology_virtual[x - 1][j] == 1) { // nodeX has a node connected in its right
+                rightX = true;
+            } else if (topology_virtual[y - 1][j] == -1) { // nodeY has a node connected in its left
+                leftY = true;
+            } else if (topology_virtual[y - 1][j] == 1) { // nodeX has a node connected in its right
+                rightY = true;
+            }
+        }
+
+        // By default, the nodes are connected by its left
+
+        if (!leftX && !rightX) { // nodeX is not connected with any node
+            if (!leftY && !rightY) { // nodeY is not connected with any node
+                topology_virtual[x - 1][y - 1] = -1;
+                topology_virtual[y - 1][x - 1] = -1;
+            } else {
+                if (leftY && rightY) { // nodeY full of connections
+                    result = false;
+                } else {
+                    topology_virtual[x - 1][y - 1] = -1;
+                    if (leftY) { // nodeY has a node in its left
+                        topology_virtual[y - 1][x - 1] = 1;
+                    } else { // nodeY has a node in its right
+                        topology_virtual[y - 1][x - 1] = -1;
+                    }
+                }
+            }
+        } else {
+            if (leftX && rightX) { // nodeX full of connections
+                result = false;
+            } else {
+                if (leftX) { // nodeX has a node in its left
+                    if (!leftY && !rightY) { // nodeY is not connected with any node
+                        topology_virtual[x - 1][y - 1] = 1;
+                        topology_virtual[y - 1][x - 1] = -1;
+                    } else {
+                        if (leftY && rightY) {
+                            result = false;
+                        } else {
+                            topology_virtual[x - 1][y - 1] = 1;
+                            if (leftY) { // nodeY has a node in its left
+                                topology_virtual[y - 1][x - 1] = 1;
+                            } else { // nodeY has a node in its right
+                                topology_virtual[y - 1][x - 1] = -1;
+                            }
+                        }
+
+                    }
+                } else { // nodeX has a node in its right
+                    if (!leftY && !rightY) { // nodeY is not connected with any node
+                        topology_virtual[x - 1][y - 1] = -1;
+                        topology_virtual[y - 1][x - 1] = -1;
+                    } else {
+                        if (leftY && rightY) { // nodeY full of connections
+                            result = false;
+                        } else {
+                            topology_virtual[x - 1][y - 1] = -1;
+                            if (leftY) { // nodeY has a node in its left
+                                topology_virtual[y - 1][x - 1] = 1;
+                            } else { // nodeY has a node in its right
+                                topology_virtual[y - 1][x - 1] = -1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static void disconnectNodesVirtualTopology(String nodeX, String nodeY) {
+        int x = Integer.parseInt(nodeX.substring(4));
+        int y = Integer.parseInt(nodeY.substring(4));
+
+        topology_virtual[x - 1][y - 1] = 0;
+        topology_virtual[y - 1][x - 1] = 0;
+
+        return;
+    }
+
+    private static String obtainLeft(String source) {
+        int start = Integer.parseInt(source.substring(4));
+        String result = "error";
+        boolean found = false;
+
+        for (int j = 0; j < num_nodes; j++) {
+            if (topology_virtual[start - 1][j] == -1) {
+                result = "node" + (j + 1);
+                found = true;
+            }
+        }
+
+        if (found) {
+            return result;
+        } else { // No nodes connected or the only node connected is in its right
+            return result;
+        }
+    }
+
+    private static String obtainRight(String source) {
+        int start = Integer.parseInt(source.substring(4));
+        String result = "error";
+        boolean found = false;
+
+        for (int j = 0; j < num_nodes; j++) {
+            if (topology_virtual[start - 1][j] == 1) {
+                result = "node" + (j + 1);
+                found = true;
+            }
+        }
+
+        if (found) {
+            return result;
+        } else { // No nodes connected or the only node connected is in its right
+            return result;
         }
     }
 }

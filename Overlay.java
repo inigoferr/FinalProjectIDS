@@ -10,7 +10,8 @@ import com.rabbitmq.client.DeliverCallback;
 
 public class Overlay {
 
-    private static final String EXCHANGE_NAME = "node_logs";
+    private static final String OVERLAY_QUEUE = "overlay"; 
+    private static final String REGISTRY_QUEUE = "registry";
 
     public static void main(String[] argv) throws Exception {
         String corrId, nodeX, nodeY, userMessage;
@@ -23,25 +24,23 @@ public class Overlay {
             Channel send = connection.createChannel();
             Channel recv = connection.createChannel();
 
-            send.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
-            recv.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
-            String queueName = recv.queueDeclare().getQueue();
-
+            boolean durable = true;
             //Connections
-            recv.queueBind(queueName, EXCHANGE_NAME, "list");
+            recv.queueDeclare(OVERLAY_QUEUE,durable,false, false, null); 
+            send.queueDeclare(REGISTRY_QUEUE,durable,false, false, null); 
 
             // Connection with Node_Registry
             DeliverCallback deliverCallback = (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), "UTF-8");
-                String key = delivery.getEnvelope().getRoutingKey();
+                String key = delivery.getProperties().getAppId(); 
 
                 if(key.equals("list")){
                     System.out.println("List of nodes: " + message);
                 }
                 
             };
-            recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {
-            });
+            recv.basicConsume(OVERLAY_QUEUE, true, deliverCallback, consumerTag -> {}); 
+
             // Menu
             /*
              * Menu options: 
@@ -65,39 +64,64 @@ public class Overlay {
                 String input = scan.next();
                 switch (input) {
                     case "list":
-                        send.basicPublish(EXCHANGE_NAME, "obtain_list_nodes", null, null);
+                        AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().appId("obtain_list_nodes").build();
+                        send.basicPublish("", REGISTRY_QUEUE, listProps, null);
                         break;
+
                     case "connect": 
                         nodeX = scan.next();
                         nodeY = scan.next();
-                        send.basicPublish(EXCHANGE_NAME, "obtain_list_nodes", null, null);
+                        AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().appId("connect").userId(nodeX).clusterId(nodeY).build();
+                        send.basicPublish("", REGISTRY_QUEUE, connectProps, null);
                         break;
+
                     case "disconnect":
                         nodeX = scan.next();
                         nodeY = scan.next();
+                        AMQP.BasicProperties disconnectProps = new AMQP.BasicProperties.Builder().appId("disconnect").userId(nodeX).clusterId(nodeY).build();
+                        send.basicPublish("", REGISTRY_QUEUE, disconnectProps, null);
                         break;
+
                     case "show_topology":
                         break;
+
                     case "show_topology_overlay":
                         break;
+
                     case "send":
+                        nodeX = scan.next();
+                        nodeY = scan.next();
+                        scan.skip(" ");
+                        userMessage = scan.nextLine();
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().appId("send").userId(nodeX).clusterId(nodeY).build();
+                        send.basicPublish("", REGISTRY_QUEUE, sendProps, userMessage.getBytes("UTF-8"));
                         break;
+
                     case "send_left":
                         nodeX = scan.next();
                         scan.skip(" ");
                         userMessage = scan.nextLine();
+                        AMQP.BasicProperties sendLeftProps = new AMQP.BasicProperties.Builder()
+                            .appId("send_left").userId(nodeX).build();
+                        send.basicPublish("", REGISTRY_QUEUE, sendLeftProps, userMessage.getBytes("UTF-8"));
                         break;
+
                     case "send_right":
                         nodeX = scan.next();
                         scan.skip(" ");
                         userMessage = scan.nextLine();
+                        AMQP.BasicProperties sendRightProps = new AMQP.BasicProperties.Builder().appId("send_right").userId(nodeX).build();
+                        send.basicPublish("", REGISTRY_QUEUE, sendRightProps, userMessage.getBytes("UTF-8"));
                         break;
+
                     case "help":
                         showMenu();
                         break;
+
                     case "exit":
                         connected = false;
                         break;
+
                     default:
                         System.out.println("The command typed is not available");
                         break;
