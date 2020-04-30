@@ -16,6 +16,8 @@ public class Node {
     private static int[] connections; /////////////////////// Would this be better as an array of Strings representing nodes eg. 
                                       /////////////////////// [node1,node1,node3,...] instead of [1,3,3,...]. Something to think about and 
                                       /////////////////////// relates to how you do the obtainConnections function in registry.
+                                      //////Answer Iñigo: Yes we can do it like that too, it'll be only translate from [1,2,3...] which is
+                                      //////what the node will receive from node_registry to [node1,node2...] but I think it doesn't matter too much.
 
     public static void main(String[] argv) throws Exception {
         
