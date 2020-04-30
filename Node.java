@@ -15,8 +15,11 @@ public class Node {
     private static String corrId, corrId2;
     private static int[] connections; 
 
+    private static boolean go;
     public static void main(String[] argv) throws Exception {
-        
+        boolean created = true;
+        go = false;    
+    
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost("localhost");
 
@@ -61,6 +64,7 @@ public class Node {
 
                 //Create queues to receive messages from other Nodes and Node_Registry
                 recv.queueDeclare(id,durable,false, false, null);//This queue will receive messages from other nodes
+                go = true;
 
                 //Request its connections with other nodes
                 corrId2 = UUID.randomUUID().toString();
@@ -70,13 +74,17 @@ public class Node {
 
             // Receive connections with other nodes
             } else if (delivery.getProperties().getCorrelationId().equals(corrId2)){
-                byte[] table_route = delivery.getBody();
+                String msg = new String(delivery.getBody(), "UTF-8");
 
-                //Translate byte[] to int[]
+                String[] table_route = msg.split(":");
+                
+                connections = new int[table_route.length];
+                System.out.println("Table Route");
                 for(int i = 0; i < table_route.length; i++){
-                    connections[i] = (int) table_route[i];
+                    connections[i] = Integer.parseInt(table_route[i]);
+                    System.out.print(connections[i] + "|");
                 }
-
+                System.out.println("");
             // Receive normal message 
             } else {
                 String message = new String(delivery.getBody(), "UTF-8");
@@ -88,7 +96,7 @@ public class Node {
                     AMQP.BasicProperties nextProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
 
                     // Lookup which node must send to in order to reach destNode and send
-                    int id = Integer.parseInt(destNode.substring(4));//Character.getNumericValue(destNode.charAt(4));
+                    int id = Integer.parseInt(destNode.substring(4));
                     int link = connections[id-1];
                     String nextNode = "node" + Integer.toString(link);
 
@@ -99,7 +107,12 @@ public class Node {
         };
 
         recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
-        recv.basicConsume(id,true,deliverCallback,consumerTag -> {}); 
+        while(created){ //This while is necessary, otherwise the programm will try to execute it and crash as 'id' is not created yet
+            if(go){     
+                recv.basicConsume(id,true,deliverCallback,consumerTag -> {}); 
+                created = false;
+            }
+        }
     }
 
 }

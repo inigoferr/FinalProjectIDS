@@ -84,20 +84,12 @@ public class Node_Registry {
 
                 // Get the connections of the node requesting them and send them to that node
             } else if (key.equals("obtain_connections")) {
-                char index = message.charAt(4);
-                ArrayList<Integer> table_routes = obtainConnections(Character.getNumericValue(index));
-                Object[] x = table_routes.toArray();
-                byte[] envelop = new byte[x.length];
+                int index = Integer.parseInt(message.substring(4));
 
-                System.out.print("Table Routes");
-                for (int i = 0; i < x.length; i++) {
-                    envelop[i] = (byte) x[i];
-                    System.out.print(envelop[i] + "|");
-                }
-                System.out.println("");
+                String table_routes = obtainConnections(index);
 
                 AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().correlationId(corrID).build();
-                send.basicPublish("", replyTo, listProps, envelop);
+                send.basicPublish("", replyTo, listProps, table_routes.getBytes());
 
                 // Connect two nodes in the virtual topology
             } else if (key.equals("connect")) {
@@ -105,20 +97,31 @@ public class Node_Registry {
                 String nodeX = delivery.getProperties().getUserId();
                 String nodeY = delivery.getProperties().getClusterId();
 
-                // connect the nodes in virtual topology
-                // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                connectNodesVirtualTopology(nodeX, nodeY);
+                if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
+                    // connect the nodes in virtual topology
+                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    connectNodesVirtualTopology(nodeX, nodeY);
+                } else {
+                    System.out.println("Error in the Id's");
+                    // Notify the user
+                }
 
             } else if (key.equals("disconnect")) {
                 // Decode nodes provided by the overlay
                 String nodeX = delivery.getProperties().getUserId();
                 String nodeY = delivery.getProperties().getClusterId();
 
-                // connect the nodes in virtual topology
-                // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                disconnectNodesVirtualTopology(nodeX, nodeY);
+                if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
+                    // disconnect the nodes in virtual topology
+                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    disconnectNodesVirtualTopology(nodeX, nodeY);
+                } else {
+                    System.out.println("Error in the Id's");
+                    // Notify the user
+                }
 
                 // Initiate the sending of a message
+
             } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
                 // Decode sender and receiver nodes provided by the overlay
                 String srcNode = delivery.getProperties().getUserId();
@@ -134,12 +137,19 @@ public class Node_Registry {
                                                      // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
 
-                if (destNode.equals("error")) { //The node is not connected
-
+                if (destNode.equals("error")) { // The node is not connected
+                    System.out.println("Node not connected");
+                    //Notify the user
                 } else {
-                    // Encapsulate destination node in message and send message to source node
-                    AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
-                    send.basicPublish("", srcNode, sendProps, message.getBytes());
+                    if (isIdCorrect(srcNode) && isIdCorrect(destNode)) {
+                        // Encapsulate destination node in message and send message to source node
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                        send.basicPublish("", srcNode, sendProps, message.getBytes());
+                    } else {
+                        System.out.println("Error in the Id's");
+                        // Notify the user
+                    }
+
                 }
             }
 
@@ -170,24 +180,45 @@ public class Node_Registry {
         return result;
     }
 
-    private static ArrayList<Integer> obtainConnections(int node) {
-        ArrayList<Integer> connections = new ArrayList<Integer>();
+    private static String obtainConnections(int node) {
+        // ArrayList<Integer> connections = new ArrayList<Integer>();
+        String connections = "";
+        // Substract one from the value of node
+        node -= 1;
 
         graph = Dijkstra.calculateShortestPathFromSource(graph, nodes_dijkstra.get(node));
 
-        System.out.print("Table Route of Node " + node);
+        System.out.println("Table Route of Node " + node);
         for (int j = 0; j < num_nodes; j++) {
-
             if (node == j) {
-                connections.set(j, -1); // It's the node
+                // It's the node
+                if (j == (num_nodes - 1)) {
+                    connections = connections.concat("-1");
+                } else {
+                    connections = connections.concat("-1:");
+                }
             } else {
                 List<NodePath> shortest_path = nodes_dijkstra.get(j).getShortestPath();
+                int num;
 
-                connections.set(j, Integer.parseInt(shortest_path.get(0).getName()) - 1);
+                if (shortest_path.size() == 1) {
+                    num = j;
+                } else {
+                    num = Integer.parseInt(shortest_path.get(1).getName());
+                }
+
+                if (j == (num_nodes - 1)) {
+                    connections = connections.concat(Integer.toString(num));
+                } else {
+                    connections = connections.concat(Integer.toString(num)).concat(":");
+                }
             }
-            System.out.print(connections.get(j) + "|");
         }
-        System.out.println("");
+        System.out.println(connections);
+
+        // Reinitialize the graph
+        calculateParametersForDijkstra(topology);
+
         return connections;
     }
 
@@ -247,7 +278,7 @@ public class Node_Registry {
         if (!leftX && !rightX) { // nodeX is not connected with any node
             if (!leftY && !rightY) { // nodeY is not connected with any node
                 topology_virtual[x - 1][y - 1] = -1;
-                topology_virtual[y - 1][x - 1] = -1;
+                topology_virtual[y - 1][x - 1] = 1;
             } else {
                 if (leftY && rightY) { // nodeY full of connections
                     result = false;
@@ -350,5 +381,20 @@ public class Node_Registry {
         } else { // No nodes connected or the only node connected is in its right
             return result;
         }
+    }
+
+    private static boolean isIdCorrect(String id) {
+        boolean result = false;
+        String node = id.substring(0, 4);
+
+        if (node.equals("node")) {
+            int num = Integer.parseInt(id.substring(4));
+
+            if (num >= 1 && num <= count) { // count stores the number of nodes initialized
+                result = true;
+            }
+        }
+
+        return result;
     }
 }
