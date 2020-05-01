@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.io.File;
 import java.io.IOException;
 
 public class Node_Registry {
@@ -22,7 +23,7 @@ public class Node_Registry {
     private static LinkedList<String> nodes = new LinkedList<>();
     private static final String REGISTRY_QUEUE = "registry";
     private static final String OVERLAY_QUEUE = "overlay";
-    private static int count, num_nodes;
+    private static int count, num_nodes, virtTopCount;
     private static int[][] topology;
     private static int[][] topology_virtual;
 
@@ -53,6 +54,12 @@ public class Node_Registry {
         initializeVirtualTopology();
 
         System.out.println("Node Registry running...");
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                cleanUpTopologyFiles(virtTopCount);
+            }
+        });
 
         Object monitor = new Object();
         count = 1;
@@ -158,7 +165,7 @@ public class Node_Registry {
             // Obtain physical topology
             } else if (key.equals("obtain_topology")) {
                 try {
-                    showTopology(topology,false);
+                    showTopology(topology,false,0);
                 } catch (Exception e) {
                     System.out.println("Error in diplaying topology.");
                 }
@@ -166,7 +173,7 @@ public class Node_Registry {
             // Obtain virtual topology
             } else if (key.equals("obtain_virtual_topology")) {
                 try {
-                    showTopology(topology_virtual,true);
+                    virtTopCount = showTopology(topology_virtual,true,virtTopCount);
                 } catch (Exception e) {
                     System.out.println("Error in diplaying topology.");
                 }
@@ -418,13 +425,14 @@ public class Node_Registry {
         return result;
     }
 
-    private static void showTopology(int[][] topology, boolean virtual) throws IOException {
+    private static int showTopology(int[][] topology, boolean virtual, int count) throws IOException {
         int width = 1000;
         int height = 500;
         String filename;
 
         if (virtual) {
-            filename = "virtual_topology.jpg";
+            filename = "virtual_topology"+count+".jpg";
+            count++;
         } else {
             filename = "topology.jpg";
         }
@@ -434,6 +442,18 @@ public class Node_Registry {
     
         DrawImage drawer = new DrawImage();
         drawer.draw(filename,width,height);
+
+        return count;
+    }
+
+    private static void cleanUpTopologyFiles(int count) {
+        
+        for (int i = 0; i < count; i++) {
+            File file = new File("virtual_topology"+i+".jpg");
+            file.delete();
+        }
+        File file = new File("topology.jpg");
+        file.delete();
     }
 
 }
