@@ -11,8 +11,10 @@ import Dijkstra.NodePath;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 public class Node_Registry {
 
@@ -94,8 +96,10 @@ public class Node_Registry {
                 // Connect two nodes in the virtual topology
             } else if (key.equals("connect")) {
                 // Decode nodes provided by the overlay
-                String nodeX = delivery.getProperties().getUserId();
-                String nodeY = delivery.getProperties().getClusterId();
+                Map<String,Object> headers = delivery.getProperties().getHeaders();
+
+                String nodeX = headers.get("nodeX").toString();//delivery.getProperties().getUserId();
+                String nodeY = headers.get("nodeY").toString();//delivery.getProperties().getClusterId();
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
                     // connect the nodes in virtual topology
@@ -151,6 +155,28 @@ public class Node_Registry {
                     }
 
                 }
+            } else if (key.equals("obtain_topology")){ 
+                //Send to the user the physical topology
+                
+                Map<String, Object> headers = new HashMap<String, Object>();
+                headers.put("num_nodes",  num_nodes);
+
+                String physical_topology = obtainPhysicalTopology();
+
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers).appId("topology").correlationId(corrID).build();
+                send.basicPublish("", OVERLAY_QUEUE, listProps, physical_topology.getBytes());
+
+
+            } else if (key.equals("obtain_virtual_topology")){
+                //Send to the user the virtual topology
+
+                Map<String, Object> headers = new HashMap<String, Object>();
+                headers.put("num_nodes",  num_nodes);
+
+                String virtual_topology = obtainVirtualTopology();
+
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers).appId("virtual_topology").correlationId(corrID).build();
+                send.basicPublish("", OVERLAY_QUEUE, listProps, virtual_topology.getBytes());
             }
 
             synchronized (monitor) {
@@ -202,9 +228,9 @@ public class Node_Registry {
                 int num;
 
                 if (shortest_path.size() == 1) {
-                    num = j;
+                    num = j + 1;
                 } else {
-                    num = Integer.parseInt(shortest_path.get(1).getName());
+                    num = Integer.parseInt(shortest_path.get(1).getName()) + 1;
                 }
 
                 if (j == (num_nodes - 1)) {
@@ -395,6 +421,36 @@ public class Node_Registry {
             }
         }
 
+        return result;
+    }
+
+    private static String obtainPhysicalTopology(){
+        String result = "";
+
+        for(int i = 0; i < num_nodes; i++){
+            for (int j = 0; j< num_nodes; j++){
+                if (i == (num_nodes -1) && j == (num_nodes - 1)){
+                    result = result.concat(Integer.toString(topology[i][j]));
+                } else {
+                    result = result.concat(Integer.toString(topology[i][j])).concat(":");
+                }
+            }
+        }
+        return result;
+    }
+
+    private static String obtainVirtualTopology(){
+        String result = "";
+
+        for(int i = 0; i < num_nodes; i++){
+            for (int j = 0; j< num_nodes; j++){
+                if (i == (num_nodes -1) && j == (num_nodes - 1)){
+                    result = result.concat(Integer.toString(topology_virtual[i][j]));
+                } else {
+                    result = result.concat(Integer.toString(topology_virtual[i][j])).concat(":");
+                }
+            }
+        }
         return result;
     }
 }

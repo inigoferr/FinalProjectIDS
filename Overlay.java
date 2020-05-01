@@ -1,3 +1,5 @@
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -36,6 +38,43 @@ public class Overlay {
 
                 if(key.equals("list")){
                     System.out.println("List of nodes: " + message);
+                } else if (key.equals("topology")){
+                    String[] array = message.split(":");
+                    Map<String,Object> headers = delivery.getProperties().getHeaders();
+                    
+                    int num_nodes = Integer.parseInt(headers.get("num_nodes").toString());
+
+                    int[][] topology = new int[num_nodes][num_nodes];
+
+                    System.out.println("Physical Topology");
+                    int k = 0;
+                    for(int i = 0; i < num_nodes; i++){
+                        for (int j = 0; j < num_nodes; j++){
+                            topology[i][j] = Integer.parseInt(array[k]);
+                            k++;
+                            System.out.print(topology[i][j] + " ");
+                        }
+                        System.out.println("");
+                    }
+
+                } else if (key.equals("virtual_topology")){
+                    String[] array = message.split(":");
+                    Map<String,Object> headers = delivery.getProperties().getHeaders();
+                    
+                    int num_nodes = Integer.parseInt(headers.get("num_nodes").toString());
+
+                    int[][] virtual_topology = new int[num_nodes][num_nodes];
+
+                    int k = 0;
+                    System.out.println("Physical Topology");
+                    for(int i = 0; i < num_nodes; i++){
+                        for (int j = 0; j < num_nodes; j++){
+                            virtual_topology[i][j] = Integer.parseInt(array[k]);
+                            k++;
+                            System.out.print(virtual_topology[i][j] + " ");
+                        }
+                        System.out.println("");
+                    }
                 }
                 
             };
@@ -71,7 +110,14 @@ public class Overlay {
                     case "connect": 
                         nodeX = scan.next();
                         nodeY = scan.next();
-                        AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().appId("connect").userId(nodeX).clusterId(nodeY).build();
+
+                        //Set headers
+                        Map<String, Object> headers = new HashMap<String, Object>();
+                        headers.put("nodeX",nodeX);
+                        headers.put("nodeY",nodeY);
+
+                        //AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().appId("connect").userId(nodeX).clusterId(nodeY).build();
+                        AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().headers(headers).appId("connect").build();
                         send.basicPublish("", REGISTRY_QUEUE, connectProps, null);
                         break;
 
@@ -83,9 +129,13 @@ public class Overlay {
                         break;
 
                     case "show_topology":
+                        AMQP.BasicProperties show_topologyProps = new AMQP.BasicProperties.Builder().appId("obtain_topology").build();
+                        send.basicPublish("", REGISTRY_QUEUE, show_topologyProps, null);
                         break;
 
                     case "show_topology_overlay":
+                        AMQP.BasicProperties show_virtualtopologyProps = new AMQP.BasicProperties.Builder().appId("obtain_virtual_topology").build();
+                        send.basicPublish("", REGISTRY_QUEUE, show_virtualtopologyProps, null);
                         break;
 
                     case "send":
@@ -93,6 +143,7 @@ public class Overlay {
                         nodeY = scan.next();
                         scan.skip(" ");
                         userMessage = scan.nextLine();
+
                         AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().appId("send").userId(nodeX).clusterId(nodeY).build();
                         send.basicPublish("", REGISTRY_QUEUE, sendProps, userMessage.getBytes("UTF-8"));
                         break;
