@@ -39,8 +39,12 @@ public class Overlay {
 
                 if(key.equals("list")){
                     System.out.println("List of nodes: " + message);
+                } else if (key.equals("error_id")){
+                    System.out.println("The Id or Id's written do not exist");
+                } else if(key.equals("error_node_connected")){
+                    System.out.println("The nodes you are trying to connect are not initialized");
                 }
-                
+                System.out.print("Overlay >> ");
             };
             recv.basicConsume(OVERLAY_QUEUE, true, deliverCallback, consumerTag -> {}); 
 

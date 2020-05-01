@@ -114,6 +114,10 @@ public class Node_Registry {
                 } else {
                     // Notify the user
                     System.out.println("Error in the Id's");
+
+                    String error = "error";
+                    AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_id").build();
+                    send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 }
                 
                 // Disconnect two nodes in virtual overlay
@@ -128,6 +132,10 @@ public class Node_Registry {
                 } else {
                     // Notify the user
                     System.out.println("Error in the Id's");
+
+                    String error = "error";
+                    AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_id").build();
+                    send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 }
                 
 
@@ -141,13 +149,19 @@ public class Node_Registry {
                     destNode = headers.get("destNode").toString().trim();
                 } else if (key.equals("send_left")) {
                     destNode = obtainLeft(srcNode); // Get from virtual topology array
+                    headers.put("destNode",destNode);
                 } else if (key.equals("send_right")) {
                     destNode = obtainRight(srcNode); // Get from virtual topology array
+                    headers.put("destNode",destNode);
                 }
 
                 if (destNode.equals("error")) { // The node is not connected
                     // Notify the user
                     System.out.println("Node not connected");
+
+                    String error = "error";
+                    AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_node_connected").build();
+                    send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 } else {
                     if (isIdCorrect(srcNode) && isIdCorrect(destNode)) {
                         // Encapsulate destination node in message and send message to source node
@@ -159,7 +173,7 @@ public class Node_Registry {
                         // Notify the user
                     }
                 }
-                System.out.println(srcNode + "|" + destNode);
+                System.out.println(srcNode + " | " + destNode);
 
 
             // Obtain physical topology
@@ -342,7 +356,7 @@ public class Node_Registry {
                 } else { // nodeX has a node in its right
                     if (!leftY && !rightY) { // nodeY is not connected with any node
                         topology_virtual[x - 1][y - 1] = -1;
-                        topology_virtual[y - 1][x - 1] = -1;
+                        topology_virtual[y - 1][x - 1] = 1;
                     } else {
                         if (leftY && rightY) { // nodeY full of connections
                             result = false;
