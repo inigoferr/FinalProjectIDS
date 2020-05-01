@@ -71,14 +71,14 @@ public class Overlay {
                     case "connect": 
                         nodeX = scan.next();
                         nodeY = scan.next();
-                        AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().appId("connect").userId(nodeX).clusterId(nodeY).build();
+                        AMQP.BasicProperties connectProps = new AMQP.BasicProperties.Builder().appId("connect").contentType(nodeX).clusterId(nodeY).build();
                         send.basicPublish("", REGISTRY_QUEUE, connectProps, null);
                         break;
 
                     case "disconnect":
                         nodeX = scan.next();
                         nodeY = scan.next();
-                        AMQP.BasicProperties disconnectProps = new AMQP.BasicProperties.Builder().appId("disconnect").userId(nodeX).clusterId(nodeY).build();
+                        AMQP.BasicProperties disconnectProps = new AMQP.BasicProperties.Builder().appId("disconnect").contentType(nodeX).clusterId(nodeY).build();
                         send.basicPublish("", REGISTRY_QUEUE, disconnectProps, null);
                         break;
 
@@ -93,7 +93,7 @@ public class Overlay {
                         nodeY = scan.next();
                         scan.skip(" ");
                         userMessage = scan.nextLine();
-                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().appId("send").userId(nodeX).clusterId(nodeY).build();
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().appId("send").contentType(nodeX).clusterId(nodeY).build();
                         send.basicPublish("", REGISTRY_QUEUE, sendProps, userMessage.getBytes("UTF-8"));
                         break;
 
@@ -102,7 +102,7 @@ public class Overlay {
                         scan.skip(" ");
                         userMessage = scan.nextLine();
                         AMQP.BasicProperties sendLeftProps = new AMQP.BasicProperties.Builder()
-                            .appId("send_left").userId(nodeX).build();
+                            .appId("send_left").contentType(nodeX).build();
                         send.basicPublish("", REGISTRY_QUEUE, sendLeftProps, userMessage.getBytes("UTF-8"));
                         break;
 
@@ -110,7 +110,7 @@ public class Overlay {
                         nodeX = scan.next();
                         scan.skip(" ");
                         userMessage = scan.nextLine();
-                        AMQP.BasicProperties sendRightProps = new AMQP.BasicProperties.Builder().appId("send_right").userId(nodeX).build();
+                        AMQP.BasicProperties sendRightProps = new AMQP.BasicProperties.Builder().appId("send_right").contentType(nodeX).build();
                         send.basicPublish("", REGISTRY_QUEUE, sendRightProps, userMessage.getBytes("UTF-8"));
                         break;
 
