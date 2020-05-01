@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.io.IOException;
 
 public class Node_Registry {
 
@@ -42,7 +43,7 @@ public class Node_Registry {
 
         // Obtain Physical Topology
         PhysicalTopology physicalTopology = new PhysicalTopology();
-        topology = physicalTopology.getTopology_1();
+        topology = physicalTopology.getTopology_2();
         num_nodes = topology.length;
 
         // Calculate the Parameters to implement in the future Dijkstra
@@ -60,6 +61,7 @@ public class Node_Registry {
             String key = delivery.getProperties().getAppId();
             String replyTo = delivery.getProperties().getReplyTo();
             String corrID = delivery.getProperties().getCorrelationId();
+            Map<String,Object> headers = delivery.getProperties().getHeaders();
 
             // Add node
             if (key.equals("new_node")) {
@@ -96,47 +98,39 @@ public class Node_Registry {
                 // Connect two nodes in the virtual topology
             } else if (key.equals("connect")) {
                 // Decode nodes provided by the overlay
-                Map<String,Object> headers = delivery.getProperties().getHeaders();
-
-                String nodeX = headers.get("nodeX").toString();//delivery.getProperties().getUserId();
-                String nodeY = headers.get("nodeY").toString();//delivery.getProperties().getClusterId();
-                //String nodeX = delivery.getProperties().getContentType();
-                //String nodeY = delivery.getProperties().getClusterId();
+                String nodeX = headers.get("nodeX").toString();
+                String nodeY = headers.get("nodeY").toString();
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
-                    // connect the nodes in virtual topology
-                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     connectNodesVirtualTopology(nodeX, nodeY);
                 } else {
-                    System.out.println("Error in the Id's");
                     // Notify the user
+                    System.out.println("Error in the Id's");
                 }
                 System.out.println(nodeX + " connected to " + nodeY);
 
             } else if (key.equals("disconnect")) {
                 // Decode nodes provided by the overlay
-                String nodeX = delivery.getProperties().getContentType();
-                String nodeY = delivery.getProperties().getClusterId();
+                String nodeX = headers.get("nodeX").toString();
+                String nodeY = headers.get("nodeY").toString();
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
-                    // disconnect the nodes in virtual topology
-                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     disconnectNodesVirtualTopology(nodeX, nodeY);
                 } else {
-                    System.out.println("Error in the Id's");
                     // Notify the user
+                    System.out.println("Error in the Id's");
                 }
-
                 System.out.println(nodeX + " disconnected from " + nodeY);
 
                 // Initiate the sending of a message
             } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
                 // Decode sender and receiver nodes provided by the overlay
-                String srcNode = delivery.getProperties().getContentType();
-                String destNode = "";
+                String srcNode = headers.get("srcNode").toString();
+                String destNode = null;
+
 
                 if (key.equals("send")) {
-                    destNode = delivery.getProperties().getClusterId();
+                    destNode = headers.get("destNode").toString();
                 } else if (key.equals("send_left")) {
                     destNode = obtainLeft(srcNode); // Get from virtual topology array
                 } else if (key.equals("send_right")) {
@@ -146,41 +140,35 @@ public class Node_Registry {
                 System.out.println(srcNode + "|" + destNode);
 
                 if (destNode.equals("error")) { // The node is not connected
+                    // Notify the user
                     System.out.println("Node not connected");
-                    //Notify the user
                 } else {
                     if (isIdCorrect(srcNode) && isIdCorrect(destNode)) {
                         // Encapsulate destination node in message and send message to source node
-                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().contentType(destNode).build();
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().headers(headers)
+                                .build();
                         send.basicPublish("", srcNode, sendProps, message.getBytes());
                     } else {
                         System.out.println("Error in the Id's");
                         // Notify the user
                     }
-
                 }
-            } else if (key.equals("obtain_topology")){ 
-                //Send to the user the physical topology
-                
-                Map<String, Object> headers = new HashMap<String, Object>();
-                headers.put("num_nodes",  num_nodes);
 
-                String physical_topology = obtainPhysicalTopology();
+            // Obtain physical topology
+            } else if (key.equals("obtain_topology")) {
+                try {
+                    showTopology(topology,false);
+                } catch (Exception e) {
+                    System.out.println("Error in diplaying topology.");
+                }
 
-                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers).appId("topology").correlationId(corrID).build();
-                send.basicPublish("", OVERLAY_QUEUE, listProps, physical_topology.getBytes());
-
-
-            } else if (key.equals("obtain_virtual_topology")){
-                //Send to the user the virtual topology
-
-                Map<String, Object> headers = new HashMap<String, Object>();
-                headers.put("num_nodes",  num_nodes);
-
-                String virtual_topology = obtainVirtualTopology();
-
-                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers).appId("virtual_topology").correlationId(corrID).build();
-                send.basicPublish("", OVERLAY_QUEUE, listProps, virtual_topology.getBytes());
+            // Obtain virtual topology
+            } else if (key.equals("obtain_virtual_topology")) {
+                try {
+                    showTopology(topology_virtual,true);
+                } catch (Exception e) {
+                    System.out.println("Error in diplaying topology.");
+                }
             }
 
             synchronized (monitor) {
@@ -429,33 +417,22 @@ public class Node_Registry {
         return result;
     }
 
-    private static String obtainPhysicalTopology(){
-        String result = "";
+    private static void showTopology(int[][] topology, boolean virtual) throws IOException {
+        int width = 1000;
+        int height = 500;
+        String filename;
 
-        for(int i = 0; i < num_nodes; i++){
-            for (int j = 0; j< num_nodes; j++){
-                if (i == (num_nodes -1) && j == (num_nodes - 1)){
-                    result = result.concat(Integer.toString(topology[i][j]));
-                } else {
-                    result = result.concat(Integer.toString(topology[i][j])).concat(":");
-                }
-            }
+        if (virtual) {
+            filename = "virtual_topology.jpg";
+        } else {
+            filename = "topology.jpg";
         }
-        return result;
+
+        CreateImage creator = new CreateImage();
+        creator.create(topology,filename,width,height);
+    
+        DrawImage drawer = new DrawImage();
+        drawer.draw(filename,width,height);
     }
 
-    private static String obtainVirtualTopology(){
-        String result = "";
-
-        for(int i = 0; i < num_nodes; i++){
-            for (int j = 0; j< num_nodes; j++){
-                if (i == (num_nodes -1) && j == (num_nodes - 1)){
-                    result = result.concat(Integer.toString(topology_virtual[i][j]));
-                } else {
-                    result = result.concat(Integer.toString(topology_virtual[i][j])).concat(":");
-                }
-            }
-        }
-        return result;
-    }
 }

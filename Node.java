@@ -1,5 +1,7 @@
 import java.io.IOException;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.BuiltinExchangeType;
@@ -93,7 +95,8 @@ public class Node {
             deliverCallback = (consumerTag, delivery) -> {
                 // Receive normal message 
                 String message = new String(delivery.getBody(), "UTF-8");
-                String destNode = delivery.getProperties().getContentType(); 
+                Map<String,Object> headers = delivery.getProperties().getHeaders();
+                String destNode = headers.get("destNode").toString();
 
                 System.out.println("message received");
 
