@@ -86,37 +86,45 @@ public class Node {
                     System.out.print(connections[i] + "|");
                 }
                 System.out.println("");
-            
+                
+                try {
+                    normalRun(recv, send, id, connections);
+                } catch (Exception e) {
+                    System.out.println("error");
+                }
             }
         };
         recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
 
-        while(created[0]){ //This while is necessary, otherwise the programm will try to execute it and crash as 'id' is not created yet
-            deliverCallback = (consumerTag, delivery) -> {
-                // Receive normal message 
-                String message = new String(delivery.getBody(), "UTF-8");
-                Map<String,Object> headers = delivery.getProperties().getHeaders();
-                String destNode = headers.get("destNode").toString();
-
-                System.out.println("message received");
-
-                if (destNode.equals(id)) {
-                    System.out.println(message);
-                } else {
-                    // Encapsulate destination node in message
-                    AMQP.BasicProperties nextProps = new AMQP.BasicProperties.Builder().contentType(destNode).build();
-
-                    // Lookup which node must send to in order to reach destNode and send
-                    int id = Integer.parseInt(destNode.substring(4));
-                    int link = connections[id-1];
-                    String nextNode = "node" + Integer.toString(link);
-
-                    // Send message to next node
-                    send.basicPublish("", nextNode, nextProps, message.getBytes());
-                }    
-            };
-            recv.basicConsume(id,true,deliverCallback,consumerTag -> {});
-        }
+           
     }
 
+    private static void normalRun(Channel recv, Channel send, String id, int[] connections) throws Exception{
+        recv.queueDeclare(id,true,false, false, null);//This queue will receive messages from other nodes
+        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+            // Receive normal message 
+            String message = new String(delivery.getBody(), "UTF-8");
+            Map<String,Object> headers = delivery.getProperties().getHeaders();
+            String destNode = headers.get("destNode").toString();
+
+            System.out.println("message received");
+
+            if (destNode.equals(id)) {
+                System.out.println(message);
+            } else {
+                // Encapsulate destination node in message
+                AMQP.BasicProperties nextProps = new AMQP.BasicProperties.Builder().headers(headers).build();
+
+                // Lookup which node must send to in order to reach destNode and send
+                int nodeId = Integer.parseInt(destNode.substring(4));
+                int link = connections[nodeId-1];
+                String nextNode = "node" + Integer.toString(link);
+                System.out.println(nextNode);
+
+                // Send message to next node
+                send.basicPublish("", nextNode, nextProps, message.getBytes());
+            }    
+        };
+        recv.basicConsume(id,true,deliverCallback,consumerTag -> {});
+    }
 }

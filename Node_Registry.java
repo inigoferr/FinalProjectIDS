@@ -103,12 +103,13 @@ public class Node_Registry {
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
                     connectNodesVirtualTopology(nodeX, nodeY);
+                    System.out.println(nodeX + " connected to " + nodeY);
                 } else {
                     // Notify the user
                     System.out.println("Error in the Id's");
                 }
-                System.out.println(nodeX + " connected to " + nodeY);
-
+                
+                // Disconnect two nodes in virtual overlay
             } else if (key.equals("disconnect")) {
                 // Decode nodes provided by the overlay
                 String nodeX = headers.get("nodeX").toString();
@@ -116,28 +117,26 @@ public class Node_Registry {
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
                     disconnectNodesVirtualTopology(nodeX, nodeY);
+                    System.out.println(nodeX + " disconnected from " + nodeY);
                 } else {
                     // Notify the user
                     System.out.println("Error in the Id's");
                 }
-                System.out.println(nodeX + " disconnected from " + nodeY);
+                
 
                 // Initiate the sending of a message
             } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
                 // Decode sender and receiver nodes provided by the overlay
-                String srcNode = headers.get("srcNode").toString();
+                String srcNode = headers.get("srcNode").toString().trim();
                 String destNode = null;
 
-
                 if (key.equals("send")) {
-                    destNode = headers.get("destNode").toString();
+                    destNode = headers.get("destNode").toString().trim();
                 } else if (key.equals("send_left")) {
                     destNode = obtainLeft(srcNode); // Get from virtual topology array
                 } else if (key.equals("send_right")) {
                     destNode = obtainRight(srcNode); // Get from virtual topology array
                 }
-
-                System.out.println(srcNode + "|" + destNode);
 
                 if (destNode.equals("error")) { // The node is not connected
                     // Notify the user
@@ -153,6 +152,8 @@ public class Node_Registry {
                         // Notify the user
                     }
                 }
+                System.out.println(srcNode + "|" + destNode);
+
 
             // Obtain physical topology
             } else if (key.equals("obtain_topology")) {
@@ -206,7 +207,7 @@ public class Node_Registry {
 
         graph = Dijkstra.calculateShortestPathFromSource(graph, nodes_dijkstra.get(node));
 
-        System.out.println("Table Route of Node " + node);
+        System.out.println("Table Route of Node " + (node+1));
         for (int j = 0; j < num_nodes; j++) {
             if (node == j) {
                 // It's the node

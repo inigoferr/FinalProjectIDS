@@ -109,8 +109,8 @@ public class Overlay {
                         scan.skip(" ");
                         userMessage = scan.nextLine();
 
-                        headers.put("nodeX",nodeX);
-                        headers.put("nodeY",nodeY);
+                        headers.put("srcNode",nodeX);
+                        headers.put("destNode",nodeY);
 
                         AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().headers(headers).appId("send").build();
                         send.basicPublish("", REGISTRY_QUEUE, sendProps, userMessage.getBytes("UTF-8"));
@@ -121,7 +121,7 @@ public class Overlay {
                         scan.skip(" ");
                         userMessage = scan.nextLine();
 
-                        headers.put("nodeX",nodeX);
+                        headers.put("srcNode",nodeX);
 
                         AMQP.BasicProperties sendLeftProps = new AMQP.BasicProperties.Builder().headers(headers).appId("send_left").build();
                         send.basicPublish("", REGISTRY_QUEUE, sendLeftProps, userMessage.getBytes("UTF-8"));
@@ -132,7 +132,7 @@ public class Overlay {
                         scan.skip(" ");
                         userMessage = scan.nextLine();
 
-                        headers.put("nodeX", nodeX);
+                        headers.put("srcNode", nodeX);
 
                         AMQP.BasicProperties sendRightProps = new AMQP.BasicProperties.Builder().appId("send_right").headers(headers).build();
                         send.basicPublish("", REGISTRY_QUEUE, sendRightProps, userMessage.getBytes("UTF-8"));
