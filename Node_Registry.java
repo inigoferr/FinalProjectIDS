@@ -100,6 +100,8 @@ public class Node_Registry {
 
                 String nodeX = headers.get("nodeX").toString();//delivery.getProperties().getUserId();
                 String nodeY = headers.get("nodeY").toString();//delivery.getProperties().getClusterId();
+                //String nodeX = delivery.getProperties().getContentType();
+                //String nodeY = delivery.getProperties().getClusterId();
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
                     // connect the nodes in virtual topology
@@ -109,10 +111,11 @@ public class Node_Registry {
                     System.out.println("Error in the Id's");
                     // Notify the user
                 }
+                System.out.println(nodeX + " connected to " + nodeY);
 
             } else if (key.equals("disconnect")) {
                 // Decode nodes provided by the overlay
-                String nodeX = delivery.getProperties().getUserId();
+                String nodeX = delivery.getProperties().getContentType();
                 String nodeY = delivery.getProperties().getClusterId();
 
                 if (isIdCorrect(nodeX) && isIdCorrect(nodeY)) {
@@ -124,22 +127,23 @@ public class Node_Registry {
                     // Notify the user
                 }
 
-                // Initiate the sending of a message
+                System.out.println(nodeX + " disconnected from " + nodeY);
 
+                // Initiate the sending of a message
             } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
                 // Decode sender and receiver nodes provided by the overlay
-                String srcNode = delivery.getProperties().getUserId();
+                String srcNode = delivery.getProperties().getContentType();
                 String destNode = "";
 
                 if (key.equals("send")) {
                     destNode = delivery.getProperties().getClusterId();
                 } else if (key.equals("send_left")) {
                     destNode = obtainLeft(srcNode); // Get from virtual topology array
-                                                    // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 } else if (key.equals("send_right")) {
                     destNode = obtainRight(srcNode); // Get from virtual topology array
-                                                     // //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
+
+                System.out.println(srcNode + "|" + destNode);
 
                 if (destNode.equals("error")) { // The node is not connected
                     System.out.println("Node not connected");
@@ -147,7 +151,7 @@ public class Node_Registry {
                 } else {
                     if (isIdCorrect(srcNode) && isIdCorrect(destNode)) {
                         // Encapsulate destination node in message and send message to source node
-                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().contentType(destNode).build();
                         send.basicPublish("", srcNode, sendProps, message.getBytes());
                     } else {
                         System.out.println("Error in the Id's");
@@ -240,6 +244,7 @@ public class Node_Registry {
                 }
             }
         }
+
         System.out.println(connections);
 
         // Reinitialize the graph

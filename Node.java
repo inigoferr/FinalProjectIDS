@@ -17,8 +17,7 @@ public class Node {
 
     private static boolean go;
     public static void main(String[] argv) throws Exception {
-        boolean created = true;
-        go = false;    
+        boolean[] created = {false};
     
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost("localhost");
@@ -64,7 +63,7 @@ public class Node {
 
                 //Create queues to receive messages from other Nodes and Node_Registry
                 recv.queueDeclare(id,durable,false, false, null);//This queue will receive messages from other nodes
-                go = true;
+                created[0] = true;
 
                 //Request its connections with other nodes
                 corrId2 = UUID.randomUUID().toString();
@@ -85,15 +84,24 @@ public class Node {
                     System.out.print(connections[i] + "|");
                 }
                 System.out.println("");
-            // Receive normal message 
-            } else {
+            
+            }
+        };
+        recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
+
+        while(created[0]){ //This while is necessary, otherwise the programm will try to execute it and crash as 'id' is not created yet
+            deliverCallback = (consumerTag, delivery) -> {
+                // Receive normal message 
                 String message = new String(delivery.getBody(), "UTF-8");
-                String destNode = delivery.getProperties().getUserId(); 
+                String destNode = delivery.getProperties().getContentType(); 
+
+                System.out.println("message received");
+
                 if (destNode.equals(id)) {
                     System.out.println(message);
                 } else {
                     // Encapsulate destination node in message
-                    AMQP.BasicProperties nextProps = new AMQP.BasicProperties.Builder().userId(destNode).build();
+                    AMQP.BasicProperties nextProps = new AMQP.BasicProperties.Builder().contentType(destNode).build();
 
                     // Lookup which node must send to in order to reach destNode and send
                     int id = Integer.parseInt(destNode.substring(4));
@@ -102,16 +110,9 @@ public class Node {
 
                     // Send message to next node
                     send.basicPublish("", nextNode, nextProps, message.getBytes());
-                }
-            }
-        };
-
-        recv.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
-        while(created){ //This while is necessary, otherwise the programm will try to execute it and crash as 'id' is not created yet
-            if(go){     
-                recv.basicConsume(id,true,deliverCallback,consumerTag -> {}); 
-                created = false;
-            }
+                }    
+            };
+            recv.basicConsume(id,true,deliverCallback,consumerTag -> {});
         }
     }
 
