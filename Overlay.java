@@ -2,6 +2,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -12,9 +13,12 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.DeliverCallback;
 
+import Image.CreateImage;
+import Image.DrawImage;
+
 public class Overlay {
 
-    private static final String OVERLAY_QUEUE = "overlay"; 
+    private static final String OVERLAY_QUEUE = "overlay";
     private static final String REGISTRY_QUEUE = "registry";
 
     private static int virtTopCount;
@@ -28,6 +32,7 @@ public class Overlay {
             Runtime.getRuntime().addShutdownHook(new Thread() {
                 public void run() {
                     cleanUpTopologyFiles(virtTopCount);
+                    System.out.println("Shutting down...");
                 }
             });
 
@@ -50,6 +55,7 @@ public class Overlay {
 
                 if(key.equals("list")){
                     System.out.println("List of nodes: " + message);
+                    System.out.print("Overlay >> ");
                 } else if(key.equals("topology")){
                     String[] array = message.split(":");
                     Map<String, Object> headers_topology = delivery.getProperties().getHeaders();
@@ -70,6 +76,7 @@ public class Overlay {
                         showTopology(topology,false,0);
                     } catch (Exception e) {
                         System.out.println("Error in diplaying topology.");
+                        System.out.print("Overlay >> ");
                     }
 
                 } else if(key.equals("virtual_topology")){
@@ -93,16 +100,19 @@ public class Overlay {
                         virtTopCount = showTopology(virtual_topology,true,virtTopCount);
                     } catch (Exception e) {
                         System.out.println("Error in diplaying topology.");
+                        System.out.print("Overlay >> ");
                     }
 
                 } else if (key.equals("error_id")){
                     System.out.println("The Id or Id's written do not exist");
+                    System.out.print("Overlay >> ");
                 } else if(key.equals("error_node_connected")){
-                    System.out.println("The nodes you are trying to connect are not initialized");
+                    System.out.println("The nodes you are trying to connect are not initialized");  
+                    System.out.print("Overlay >> ");
                 } else if (key.equals("error_no_more_nodes")){
-                    System.out.println("The physical topology does not allow more nodes");
+                    System.out.println("The physical topology does not allow more nodes"); 
+                    System.out.print("Overlay >> ");
                 }
-                System.out.print("Overlay >> ");
             };
             recv.basicConsume(OVERLAY_QUEUE, true, deliverCallback, consumerTag -> {}); 
 
@@ -216,6 +226,8 @@ public class Overlay {
 
             System.out.println("Shutting down. Good bye!");
             System.exit(1);
+        } catch(NoSuchElementException ex){
+            System.out.println("Error scanning the command line");
         }
     }
 
@@ -239,25 +251,25 @@ public class Overlay {
         String filename;
 
         if (virtual) {
-            filename = "virtual_topology"+count+".jpg";
+            filename = "virtual_topology" + count + ".jpg";
             count++;
         } else {
             filename = "topology.jpg";
         }
 
         CreateImage creator = new CreateImage();
-        creator.create(topology,filename,width,height);
-    
+        creator.create(topology, filename, width, height);
+
         DrawImage drawer = new DrawImage();
-        drawer.draw(filename,width,height);
+        drawer.draw(filename, width, height);
 
         return count;
     }
 
     private static void cleanUpTopologyFiles(int count) {
-        
+
         for (int i = 0; i < count; i++) {
-            File file = new File("virtual_topology"+i+".jpg");
+            File file = new File("virtual_topology" + i + ".jpg");
             file.delete();
         }
         File file = new File("topology.jpg");
