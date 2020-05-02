@@ -55,12 +55,6 @@ public class Node_Registry {
 
         System.out.println("Node Registry running...");
 
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            public void run() {
-                cleanUpTopologyFiles(virtTopCount);
-            }
-        });
-
         Object monitor = new Object();
         count = 1;
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
@@ -68,22 +62,26 @@ public class Node_Registry {
             String key = delivery.getProperties().getAppId();
             String replyTo = delivery.getProperties().getReplyTo();
             String corrID = delivery.getProperties().getCorrelationId();
-            Map<String,Object> headers = delivery.getProperties().getHeaders();
+            Map<String, Object> headers = delivery.getProperties().getHeaders();
 
             // Add node
             if (key.equals("new_node")) {
-                String id = "node" + count;
-                count += 1;
-                nodes.add(id);
-                send.queueDeclare(id, durable, false, false, null);
-                System.out.println("New node registered with id: " + id);
+                if (nodes.size() == num_nodes) {
+                    System.out.println("The physical topology does not allow more nodes");
 
-                // Send the id to the new node
-                AMQP.BasicProperties newProps = new AMQP.BasicProperties.Builder().correlationId(corrID).build();
-                send.basicPublish("", replyTo, newProps, id.getBytes("UTF-8"));
+                } else {
+                    String id = "node" + count;
+                    count += 1;
+                    nodes.add(id);
+                    send.queueDeclare(id, durable, false, false, null);
+                    System.out.println("New node registered with id: " + id);
 
-                // Delete node
-            } else if (key.equals("delete_node")) {
+                    // Send the id to the new node
+                    AMQP.BasicProperties newProps = new AMQP.BasicProperties.Builder().correlationId(corrID).build();
+                    send.basicPublish("", replyTo, newProps, id.getBytes("UTF-8"));
+                }
+
+            } else if (key.equals("delete_node")) { // Delete node
                 nodes.remove(message); // The node would have sent the ID in the 'message'
                 System.out.println("Node removed with id: " + message);
 
@@ -119,7 +117,7 @@ public class Node_Registry {
                     AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_id").build();
                     send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 }
-                
+
                 // Disconnect two nodes in virtual overlay
             } else if (key.equals("disconnect")) {
                 // Decode nodes provided by the overlay
@@ -137,7 +135,6 @@ public class Node_Registry {
                     AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_id").build();
                     send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 }
-                
 
                 // Initiate the sending of a message
             } else if ((key.equals("send")) || (key.equals("send_left")) || (key.equals("send_right"))) {
@@ -149,24 +146,26 @@ public class Node_Registry {
                     destNode = headers.get("destNode").toString().trim();
                 } else if (key.equals("send_left")) {
                     destNode = obtainLeft(srcNode); // Get from virtual topology array
-                    headers.put("destNode",destNode);
+                    headers.put("destNode", destNode);
                 } else if (key.equals("send_right")) {
                     destNode = obtainRight(srcNode); // Get from virtual topology array
-                    headers.put("destNode",destNode);
+                    headers.put("destNode", destNode);
                 }
 
-                if (destNode.equals("error")) { // The node is not connected
+                boolean connected_in_virtual = checkConnectionInVirtual(srcNode,destNode);
+
+                if (!connected_in_virtual) { // The node is not connected
                     // Notify the user
                     System.out.println("Node not connected");
 
                     String error = "error";
-                    AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder().appId("error_node_connected").build();
+                    AMQP.BasicProperties errorIdsProps = new AMQP.BasicProperties.Builder()
+                            .appId("error_node_connected").build();
                     send.basicPublish("", OVERLAY_QUEUE, errorIdsProps, error.getBytes("UTF-8"));
                 } else {
                     if (isIdCorrect(srcNode) && isIdCorrect(destNode)) {
                         // Encapsulate destination node in message and send message to source node
-                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().headers(headers)
-                                .build();
+                        AMQP.BasicProperties sendProps = new AMQP.BasicProperties.Builder().headers(headers).build();
                         send.basicPublish("", srcNode, sendProps, message.getBytes());
                     } else {
                         System.out.println("Error in the Id's");
@@ -175,22 +174,31 @@ public class Node_Registry {
                 }
                 System.out.println(srcNode + " | " + destNode);
 
-
-            // Obtain physical topology
+                // Obtain physical topology
             } else if (key.equals("obtain_topology")) {
-                try {
-                    showTopology(topology,false,0);
-                } catch (Exception e) {
-                    System.out.println("Error in diplaying topology.");
-                }
+                // Send to the user the physical topology
 
-            // Obtain virtual topology
+                Map<String, Object> headers_topology = new HashMap<String, Object>();
+                headers_topology.put("num_nodes", num_nodes);
+
+                String physical_topology = obtainPhysicalTopology();
+
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers_topology)
+                        .appId("topology").correlationId(corrID).build();
+                send.basicPublish("", OVERLAY_QUEUE, listProps, physical_topology.getBytes());
+
+                // Obtain virtual topology
             } else if (key.equals("obtain_virtual_topology")) {
-                try {
-                    virtTopCount = showTopology(topology_virtual,true,virtTopCount);
-                } catch (Exception e) {
-                    System.out.println("Error in diplaying topology.");
-                }
+                // Send to the user the virtual topology
+
+                Map<String, Object> headers_virtual_topology = new HashMap<String, Object>();
+                headers_virtual_topology.put("num_nodes", num_nodes);
+
+                String virtual_topology = obtainVirtualTopology();
+
+                AMQP.BasicProperties listProps = new AMQP.BasicProperties.Builder().headers(headers_virtual_topology)
+                        .appId("virtual_topology").correlationId(corrID).build();
+                send.basicPublish("", OVERLAY_QUEUE, listProps, virtual_topology.getBytes());
             }
 
             synchronized (monitor) {
@@ -228,7 +236,7 @@ public class Node_Registry {
 
         graph = Dijkstra.calculateShortestPathFromSource(graph, nodes_dijkstra.get(node));
 
-        System.out.println("Table Route of Node " + (node+1));
+        System.out.println("Table Route of Node " + (node + 1));
         for (int j = 0; j < num_nodes; j++) {
             if (node == j) {
                 // It's the node
@@ -439,35 +447,49 @@ public class Node_Registry {
         return result;
     }
 
-    private static int showTopology(int[][] topology, boolean virtual, int count) throws IOException {
-        int width = 1000;
-        int height = 500;
-        String filename;
+    private static String obtainPhysicalTopology() {
+        String result = "";
 
-        if (virtual) {
-            filename = "virtual_topology"+count+".jpg";
-            count++;
-        } else {
-            filename = "topology.jpg";
+        for (int i = 0; i < num_nodes; i++) {
+            for (int j = 0; j < num_nodes; j++) {
+                if (i == (num_nodes - 1) && j == (num_nodes - 1)) {
+                    result = result.concat(Integer.toString(topology[i][j]));
+                } else {
+                    result = result.concat(Integer.toString(topology[i][j])).concat(":");
+                }
+            }
         }
-
-        CreateImage creator = new CreateImage();
-        creator.create(topology,filename,width,height);
-    
-        DrawImage drawer = new DrawImage();
-        drawer.draw(filename,width,height);
-
-        return count;
+        return result;
     }
 
-    private static void cleanUpTopologyFiles(int count) {
-        
-        for (int i = 0; i < count; i++) {
-            File file = new File("virtual_topology"+i+".jpg");
-            file.delete();
+    private static String obtainVirtualTopology() {
+        String result = "";
+
+        for (int i = 0; i < num_nodes; i++) {
+            for (int j = 0; j < num_nodes; j++) {
+                if (i == (num_nodes - 1) && j == (num_nodes - 1)) {
+                    result = result.concat(Integer.toString(topology_virtual[i][j]));
+                } else {
+                    result = result.concat(Integer.toString(topology_virtual[i][j])).concat(":");
+                }
+            }
         }
-        File file = new File("topology.jpg");
-        file.delete();
+        return result;
+    }
+
+    private static boolean checkConnectionInVirtual(String nodeX, String nodeY){
+        int numX = Integer.parseInt(nodeX.substring(4));
+        int numY = Integer.parseInt(nodeY.substring(4));
+
+        boolean result = false;
+        
+        if(topology_virtual[numX - 1][numY - 1] == -1 ||  topology_virtual[numX - 1][numY - 1] == 1){
+            if(topology_virtual[numY - 1][numX - 1] == -1 || topology_virtual[numY - 1][numX - 1] == 1){
+                result = true;
+            }
+        }
+
+        return result;
     }
 
 }

@@ -1,3 +1,5 @@
+import java.io.File;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -15,11 +17,20 @@ public class Overlay {
     private static final String OVERLAY_QUEUE = "overlay"; 
     private static final String REGISTRY_QUEUE = "registry";
 
+    private static int virtTopCount;
+
     public static void main(String[] argv) throws Exception {
         String corrId, nodeX, nodeY, userMessage;
         Map<String, Object> headers = new HashMap<String, Object>();
 
         try (Scanner scan = new Scanner(System.in)) {
+
+            Runtime.getRuntime().addShutdownHook(new Thread() {
+                public void run() {
+                    cleanUpTopologyFiles(virtTopCount);
+                }
+            });
+
             ConnectionFactory factory = new ConnectionFactory();
             factory.setHost("localhost");
 
@@ -39,10 +50,57 @@ public class Overlay {
 
                 if(key.equals("list")){
                     System.out.println("List of nodes: " + message);
+                } else if(key.equals("topology")){
+                    String[] array = message.split(":");
+                    Map<String, Object> headers_topology = delivery.getProperties().getHeaders();
+
+                    int num_nodes = Integer.parseInt(headers_topology.get("num_nodes").toString());
+
+                    int[][] topology = new int[num_nodes][num_nodes];
+
+                    int k = 0;
+                    for(int i = 0; i < num_nodes; i++){
+                        for (int j = 0; j < num_nodes; j++){
+                            topology[i][j] = Integer.parseInt(array[k]);
+                            k++;
+                        }
+                    }
+
+                    try {
+                        showTopology(topology,false,0);
+                    } catch (Exception e) {
+                        System.out.println("Error in diplaying topology.");
+                    }
+
+                } else if(key.equals("virtual_topology")){
+
+                    String[] array = message.split(":");
+                    Map<String,Object> headers_virtual_topology = delivery.getProperties().getHeaders();
+
+                    int num_nodes = Integer.parseInt(headers_virtual_topology.get("num_nodes").toString());
+
+                    int[][] virtual_topology = new int[num_nodes][num_nodes];
+
+                    int k = 0;
+                    for(int i = 0; i < num_nodes; i++){
+                        for (int j = 0; j < num_nodes; j++){
+                            virtual_topology[i][j] = Integer.parseInt(array[k]);
+                            k++;
+                        }
+                    }
+
+                    try {
+                        virtTopCount = showTopology(virtual_topology,true,virtTopCount);
+                    } catch (Exception e) {
+                        System.out.println("Error in diplaying topology.");
+                    }
+
                 } else if (key.equals("error_id")){
                     System.out.println("The Id or Id's written do not exist");
                 } else if(key.equals("error_node_connected")){
                     System.out.println("The nodes you are trying to connect are not initialized");
+                } else if (key.equals("error_no_more_nodes")){
+                    System.out.println("The physical topology does not allow more nodes");
                 }
                 System.out.print("Overlay >> ");
             };
@@ -173,6 +231,37 @@ public class Overlay {
         System.out.println("send_right [nodeX] [message]: Send Right from Node X");
         System.out.println("help : To see the commands available");
         System.out.println("exit : To exit the programm");
+    }
+
+    private static int showTopology(int[][] topology, boolean virtual, int count) throws IOException {
+        int width = 1000;
+        int height = 500;
+        String filename;
+
+        if (virtual) {
+            filename = "virtual_topology"+count+".jpg";
+            count++;
+        } else {
+            filename = "topology.jpg";
+        }
+
+        CreateImage creator = new CreateImage();
+        creator.create(topology,filename,width,height);
+    
+        DrawImage drawer = new DrawImage();
+        drawer.draw(filename,width,height);
+
+        return count;
+    }
+
+    private static void cleanUpTopologyFiles(int count) {
+        
+        for (int i = 0; i < count; i++) {
+            File file = new File("virtual_topology"+i+".jpg");
+            file.delete();
+        }
+        File file = new File("topology.jpg");
+        file.delete();
     }
 
 }
