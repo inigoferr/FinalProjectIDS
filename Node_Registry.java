@@ -1,5 +1,10 @@
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
 import com.rabbitmq.client.AMQP;
-import com.rabbitmq.client.BuiltinExchangeType;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -8,15 +13,6 @@ import com.rabbitmq.client.DeliverCallback;
 import Dijkstra.Dijkstra;
 import Dijkstra.GraphPath;
 import Dijkstra.NodePath;
-
-import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.io.File;
-import java.io.IOException;
 
 public class Node_Registry {
 
@@ -152,9 +148,7 @@ public class Node_Registry {
                     headers.put("destNode", destNode);
                 }
 
-                boolean connected_in_virtual = checkConnectionInVirtual(srcNode,destNode);
-
-                if (!connected_in_virtual) { // The node is not connected
+                if (destNode.equals("error")) { // The node is not connected
                     // Notify the user
                     System.out.println("Node not connected");
 
@@ -474,21 +468,6 @@ public class Node_Registry {
                 }
             }
         }
-        return result;
-    }
-
-    private static boolean checkConnectionInVirtual(String nodeX, String nodeY){
-        int numX = Integer.parseInt(nodeX.substring(4));
-        int numY = Integer.parseInt(nodeY.substring(4));
-
-        boolean result = false;
-        
-        if(topology_virtual[numX - 1][numY - 1] == -1 ||  topology_virtual[numX - 1][numY - 1] == 1){
-            if(topology_virtual[numY - 1][numX - 1] == -1 || topology_virtual[numY - 1][numX - 1] == 1){
-                result = true;
-            }
-        }
-
         return result;
     }
 
